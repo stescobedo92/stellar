@@ -127,10 +127,28 @@ private:
 }
 
 // ============================================================================
-//  JoinAsync — consumes a range of std::future<T> (async enumerable analogue).
+//  JoinAsync — consumes a range of values, or a range of std::future<T>.
+//
+// Two overloads so MSVC doesn't get tripped up by an `if constexpr` branch
+// that would otherwise be parsed for both instantiations.
 // ============================================================================
 
+namespace detail {
+template <class T>
+struct is_future : std::false_type {};
+template <class T>
+struct is_future<std::future<T>>        : std::true_type {};
+template <class T>
+struct is_future<std::shared_future<T>> : std::true_type {};
+
+template <class R>
+inline constexpr bool range_of_futures_v =
+    is_future<std::remove_cvref_t<std::ranges::range_value_t<R>>>::value;
+}  // namespace detail
+
+// (a) Plain-value range.
 template <std::ranges::input_range R, class Fn>
+    requires (!detail::range_of_futures_v<R>)
 [[nodiscard]] inline std::future<std::string>
 JoinAsync(R range, Fn formatter, std::string separator = "") {
     return std::async(std::launch::async,
@@ -139,13 +157,26 @@ JoinAsync(R range, Fn formatter, std::string separator = "") {
             bool first = true;
             for (auto&& item : r) {
                 if (!first) out.append(sep);
-                // If the element is itself a std::future, wait for it.
-                if constexpr (requires { item.get(); }) {
-                    auto awaited = item.get();
-                    out.append(f(awaited));
-                } else {
-                    out.append(f(item));
-                }
+                out.append(f(item));
+                first = false;
+            }
+            return out;
+        });
+}
+
+// (b) Future range — await each future in order, then format.
+template <std::ranges::input_range R, class Fn>
+    requires detail::range_of_futures_v<R>
+[[nodiscard]] inline std::future<std::string>
+JoinAsync(R range, Fn formatter, std::string separator = "") {
+    return std::async(std::launch::async,
+        [r = std::move(range), f = std::move(formatter), sep = std::move(separator)]() mutable {
+            std::string out;
+            bool first = true;
+            for (auto&& fut : r) {
+                if (!first) out.append(sep);
+                auto awaited = fut.get();
+                out.append(f(awaited));
                 first = false;
             }
             return out;
