@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write   # needed to create releases and push bumps
+  actions: write    # needed to dispatch publish-vcpkg / publish-conan
 
 jobs:
   release:
