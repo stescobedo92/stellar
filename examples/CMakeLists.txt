@@ -1,0 +1,2 @@
+add_executable(stellar_example_basic basic_usage.cpp)
+target_link_libraries(stellar_example_basic PRIVATE stellar::stellar)
