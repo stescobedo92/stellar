@@ -17,8 +17,8 @@ add it to their `vcpkg-configuration.json`, then install via `vcpkg install stel
     {
       "kind": "git",
       "repository": "https://github.com/stescobedo92/stellar",
-      "baseline": "<commit-sha-of-this-repo-main>",
-      "reference": "main",
+      "baseline": "<commit-sha-of-this-repo-master>",
+      "reference": "master",
       "packages": [ "stellar" ]
     }
   ]

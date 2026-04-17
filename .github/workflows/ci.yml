@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -94,5 +94,5 @@ jobs:
         run: |
           export VCPKG_KEEP_ENV_VARS=SKIP_SHA
           # Dev: point portfile at HEAD so SHA is not validated
-          sed -i 's|SHA512      0|SHA512      0\n    HEAD_REF    main|' "$HOME/vcpkg/ports/stellar/portfile.cmake" || true
+          sed -i 's|SHA512      0|SHA512      0\n    HEAD_REF    master|' "$HOME/vcpkg/ports/stellar/portfile.cmake" || true
           "$HOME/vcpkg/vcpkg" install stellar --head --overlay-ports="$HOME/vcpkg/ports" || true

@@ -83,7 +83,7 @@ jobs:
 
           git add registry/versions/s-/stellar.json
           git commit --amend --no-edit
-          git push origin HEAD:main
+          git push origin HEAD:master
 
   # ------------------------------------------------------------------
   # 2) Optionally open a PR against microsoft/vcpkg with the updated

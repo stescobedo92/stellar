@@ -8,7 +8,7 @@ vcpkg_from_github(
     REPO        stescobedo92/stellar
     REF         "v${VERSION}"
     SHA512      0
-    HEAD_REF    main
+    HEAD_REF    master
 )
 
 vcpkg_cmake_configure(

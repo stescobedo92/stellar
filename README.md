@@ -126,8 +126,8 @@ This repo **is** a vcpkg registry. Add it to your `vcpkg-configuration.json`:
     {
       "kind": "git",
       "repository": "https://github.com/stescobedo92/stellar",
-      "baseline": "<commit sha of main>",
-      "reference": "main",
+      "baseline": "<commit sha of master>",
+      "reference": "master",
       "packages": [ "stellar" ]
     }
   ]
