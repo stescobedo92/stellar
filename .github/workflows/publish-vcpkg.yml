@@ -1,0 +1,151 @@
+name: Publish vcpkg
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.1.0)'
+        required: true
+      sha512:
+        description: 'SHA512 of the GitHub Release tarball'
+        required: true
+      submit_upstream_pr:
+        description: 'Also open a PR to microsoft/vcpkg?'
+        required: false
+        type: boolean
+        default: false
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # ------------------------------------------------------------------
+  # 1) Update the self-hosted custom registry in this same repo so that
+  #    users consuming via vcpkg-configuration.json get the new version
+  #    immediately without waiting for a PR to microsoft/vcpkg.
+  # ------------------------------------------------------------------
+  update-self-hosted-registry:
+    name: Update self-hosted registry
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Resolve inputs
+        id: in
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            # Compute SHA512 of the release tarball by downloading it
+            TARBALL_URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/v${VERSION}.tar.gz"
+            curl -fsSL -o tarball.tar.gz "$TARBALL_URL"
+            SHA=$(sha512sum tarball.tar.gz | awk '{print $1}')
+          else
+            VERSION="${{ inputs.version }}"
+            SHA="${{ inputs.sha512 }}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha512=${SHA}"      >> "$GITHUB_OUTPUT"
+
+      - name: Patch port files with version + SHA
+        run: |
+          V="${{ steps.in.outputs.version }}"
+          SHA="${{ steps.in.outputs.sha512 }}"
+          # vcpkg.json (self-hosted registry)
+          jq --arg v "$V" '.version = $v' registry/ports/stellar/vcpkg.json > tmp && mv tmp registry/ports/stellar/vcpkg.json
+          # portfile.cmake — replace SHA512 line
+          sed -i -E "s/(SHA512\s+)[0-9a-fA-F]+/\1${SHA}/" registry/ports/stellar/portfile.cmake
+          # Also patch the canonical port (used for microsoft/vcpkg PR)
+          jq --arg v "$V" '.version = $v' packaging/vcpkg/vcpkg.json       > tmp && mv tmp packaging/vcpkg/vcpkg.json
+          sed -i -E "s/(SHA512\s+)[0-9a-fA-F]+/\1${SHA}/" packaging/vcpkg/portfile.cmake
+
+      - name: Refresh versions/baseline.json
+        run: |
+          V="${{ steps.in.outputs.version }}"
+          jq --arg v "$V" '.default.stellar.baseline = $v' registry/versions/baseline.json > tmp && mv tmp registry/versions/baseline.json
+
+      - name: Append to versions/s-/stellar.json using current git-tree
+        run: |
+          V="${{ steps.in.outputs.version }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add registry/ports/stellar packaging/vcpkg registry/versions/baseline.json
+          git commit -m "chore(vcpkg): patch port for ${V}"
+
+          # vcpkg uses the tree hash of the ports/<name> directory as git-tree
+          TREE=$(git rev-parse HEAD:registry/ports/stellar)
+          jq --arg v "$V" --arg t "$TREE" \
+             '.versions = [{version:$v, "git-tree":$t, "port-version":0}] + (.versions | map(select(.version != $v)))' \
+             registry/versions/s-/stellar.json > tmp && mv tmp registry/versions/s-/stellar.json
+
+          git add registry/versions/s-/stellar.json
+          git commit --amend --no-edit
+          git push origin HEAD:main
+
+  # ------------------------------------------------------------------
+  # 2) Optionally open a PR against microsoft/vcpkg with the updated
+  #    port. Requires secret VCPKG_FORK_PAT (a PAT with repo scope on a
+  #    fork the user owns at <owner>/vcpkg).
+  # ------------------------------------------------------------------
+  submit-upstream-pr:
+    name: PR to microsoft/vcpkg
+    runs-on: ubuntu-24.04
+    needs: update-self-hosted-registry
+    if: (github.event_name == 'workflow_dispatch' && inputs.submit_upstream_pr == true) || github.event_name == 'release'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout fork of microsoft/vcpkg
+        env:
+          GH_TOKEN: ${{ secrets.VCPKG_FORK_PAT }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::notice::VCPKG_FORK_PAT secret not set — skipping upstream PR."
+            exit 0
+          fi
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${{ secrets.VCPKG_FORK_OWNER }}/vcpkg.git" vcpkg-fork
+          cd vcpkg-fork
+          git remote add upstream https://github.com/microsoft/vcpkg.git
+          git fetch upstream master --depth=1
+          git checkout -B "stellar-${{ inputs.version || github.ref_name }}" upstream/master
+
+      - name: Copy port files + update versions
+        env:
+          GH_TOKEN: ${{ secrets.VCPKG_FORK_PAT }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then exit 0; fi
+          V="${{ inputs.version || github.ref_name }}"
+          V="${V#v}"
+          mkdir -p vcpkg-fork/ports/stellar
+          cp packaging/vcpkg/vcpkg.json packaging/vcpkg/portfile.cmake packaging/vcpkg/usage vcpkg-fork/ports/stellar/
+
+          cd vcpkg-fork
+          git add ports/stellar
+          git -c user.name=github-actions -c user.email=actions@github.com commit -m "[stellar] add / update to ${V}"
+
+          TREE=$(git rev-parse HEAD:ports/stellar)
+          mkdir -p versions/s-
+          if [[ -f versions/s-/stellar.json ]]; then
+            jq --arg v "$V" --arg t "$TREE" \
+               '.versions = [{version:$v, "git-tree":$t, "port-version":0}] + (.versions | map(select(.version != $v)))' \
+               versions/s-/stellar.json > tmp && mv tmp versions/s-/stellar.json
+          else
+            echo "{\"versions\":[{\"version\":\"${V}\",\"git-tree\":\"${TREE}\",\"port-version\":0}]}" > versions/s-/stellar.json
+          fi
+
+          if [[ -f versions/baseline.json ]]; then
+            jq --arg v "$V" '.default.stellar = {baseline:$v, "port-version":0}' versions/baseline.json > tmp && mv tmp versions/baseline.json
+          fi
+          git add versions/
+          git -c user.name=github-actions -c user.email=actions@github.com commit -m "[stellar] update versions for ${V}"
+          git push -u origin "stellar-${V}"
+
+          gh pr create \
+            --repo microsoft/vcpkg \
+            --base master \
+            --head "${{ secrets.VCPKG_FORK_OWNER }}:stellar-${V}" \
+            --title "[stellar] add ${V}" \
+            --body  "Adds/updates port \`stellar\` to version ${V}.\n\nTarball SHA512 is pinned."

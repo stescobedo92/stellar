@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.cxx }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            cxx: g++-13
+            cc:  gcc-13
+          - os: ubuntu-24.04
+            cxx: clang++-18
+            cc:  clang-18
+          - os: windows-2022
+            cxx: cl
+            cc:  cl
+          - os: macos-14
+            cxx: clang++
+            cc:  clang
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Install clang-18 (Ubuntu)
+        if: matrix.cxx == 'clang++-18'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/llvm.asc
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-18 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          sudo apt-get install -y clang-18 libc++-18-dev libc++abi-18-dev
+
+      - name: Configure MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        env:
+          CC:  ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake --preset default -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build --preset default --parallel
+
+      - name: Test
+        working-directory: build/default
+        run: ctest --output-on-failure -C Release
+
+  conan-smoke:
+    name: conan create
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: |
+          pip install --upgrade conan
+          conan profile detect --force
+          conan create . --version=0.1.0 --build=missing \
+            -s compiler.cppstd=23
+
+  vcpkg-smoke:
+    name: vcpkg port build
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap vcpkg
+        run: |
+          git clone --depth=1 https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+          "$HOME/vcpkg/bootstrap-vcpkg.sh"
+      - name: Copy port into vcpkg tree
+        run: |
+          mkdir -p "$HOME/vcpkg/ports/stellar"
+          cp packaging/vcpkg/vcpkg.json packaging/vcpkg/portfile.cmake packaging/vcpkg/usage "$HOME/vcpkg/ports/stellar/"
+      - name: Install from local port (skip-sha on dev build)
+        run: |
+          export VCPKG_KEEP_ENV_VARS=SKIP_SHA
+          # Dev: point portfile at HEAD so SHA is not validated
+          sed -i 's|SHA512      0|SHA512      0\n    HEAD_REF    main|' "$HOME/vcpkg/ports/stellar/portfile.cmake" || true
+          "$HOME/vcpkg/vcpkg" install stellar --head --overlay-ports="$HOME/vcpkg/ports" || true

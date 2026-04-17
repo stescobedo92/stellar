@@ -1,0 +1,219 @@
+name: Publish Conan
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 0.1.0)'
+        required: true
+      submit_cci_pr:
+        description: 'Open PR to conan-io/conan-center-index?'
+        required: false
+        type: boolean
+        default: true
+      upload_to_artifactory:
+        description: 'Upload built recipe to CONAN_REMOTE_URL?'
+        required: false
+        type: boolean
+        default: false
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # ------------------------------------------------------------------
+  # 1) Always validate the recipe with `conan create` on Linux + Windows
+  # ------------------------------------------------------------------
+  conan-create:
+    name: conan create (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - run: pip install --upgrade conan
+
+      - name: Resolve version
+        id: v
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ inputs.version }}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Configure MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: conan profile detect
+        shell: bash
+        run: conan profile detect --force
+
+      - name: conan create
+        shell: bash
+        run: |
+          conan create . \
+            --version=${{ steps.v.outputs.version }} \
+            --build=missing \
+            -s compiler.cppstd=23
+
+  # ------------------------------------------------------------------
+  # 2) Upload to a private / Artifactory remote if configured
+  # ------------------------------------------------------------------
+  upload-artifactory:
+    name: Upload to private remote
+    needs: conan-create
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'release' || inputs.upload_to_artifactory == true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install --upgrade conan
+
+      - name: Resolve version
+        id: v
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure remote + upload
+        env:
+          CONAN_REMOTE_URL:  ${{ secrets.CONAN_REMOTE_URL }}
+          CONAN_REMOTE_USER: ${{ secrets.CONAN_REMOTE_USER }}
+          CONAN_REMOTE_PWD:  ${{ secrets.CONAN_REMOTE_PWD }}
+        run: |
+          if [[ -z "$CONAN_REMOTE_URL" ]]; then
+            echo "::notice::No CONAN_REMOTE_URL secret — skipping upload."
+            exit 0
+          fi
+          conan profile detect --force
+          conan remote add stellar-remote "$CONAN_REMOTE_URL" --force
+          conan remote login stellar-remote "$CONAN_REMOTE_USER" -p "$CONAN_REMOTE_PWD"
+          conan create . --version=${{ steps.v.outputs.version }} --build=missing -s compiler.cppstd=23
+          conan upload "stellar/${{ steps.v.outputs.version }}" --remote=stellar-remote --confirm
+
+  # ------------------------------------------------------------------
+  # 3) Open a PR against conan-io/conan-center-index
+  #
+  # Pre-requisites (one-time setup by the maintainer):
+  #   - Fork conan-io/conan-center-index to your account
+  #   - Create PAT with "repo" scope → secret CONAN_CCI_FORK_PAT
+  #   - Set secret CONAN_CCI_FORK_OWNER to your GitHub username
+  # ------------------------------------------------------------------
+  submit-cci-pr:
+    name: PR to conan-center-index
+    needs: conan-create
+    runs-on: ubuntu-24.04
+    if: (github.event_name == 'workflow_dispatch' && inputs.submit_cci_pr == true) || github.event_name == 'release'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version + tarball sha256
+        id: rel
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            V="${GITHUB_REF_NAME#v}"
+          else
+            V="${{ inputs.version }}"
+          fi
+          URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/v${V}.tar.gz"
+          curl -fsSL -o src.tar.gz "$URL"
+          SHA=$(sha256sum src.tar.gz | awk '{print $1}')
+          echo "version=${V}"   >> "$GITHUB_OUTPUT"
+          echo "url=${URL}"     >> "$GITHUB_OUTPUT"
+          echo "sha256=${SHA}"  >> "$GITHUB_OUTPUT"
+
+      - name: Clone conan-center-index fork
+        env:
+          GH_TOKEN: ${{ secrets.CONAN_CCI_FORK_PAT }}
+          FORK:     ${{ secrets.CONAN_CCI_FORK_OWNER }}
+        run: |
+          if [[ -z "$GH_TOKEN" || -z "$FORK" ]]; then
+            echo "::notice::CONAN_CCI_FORK_PAT / CONAN_CCI_FORK_OWNER not set — skipping PR."
+            exit 0
+          fi
+          git clone --depth=1 "https://x-access-token:${GH_TOKEN}@github.com/${FORK}/conan-center-index.git" cci
+          cd cci
+          git remote add upstream https://github.com/conan-io/conan-center-index.git
+          git fetch upstream master --depth=1
+          git checkout -B "stellar/${{ steps.rel.outputs.version }}" upstream/master
+
+      - name: Scaffold / update recipes/stellar
+        run: |
+          if [[ ! -d cci ]]; then exit 0; fi
+          V="${{ steps.rel.outputs.version }}"
+          DIR=cci/recipes/stellar
+          mkdir -p "$DIR/all/test_package/src"
+
+          # conandata.yml (CCI fetches the source using this)
+          cat > "$DIR/all/conandata.yml" <<EOF
+          sources:
+            "${V}":
+              url: "${{ steps.rel.outputs.url }}"
+              sha256: "${{ steps.rel.outputs.sha256 }}"
+          EOF
+
+          # config.yml — folder routing
+          cat > "$DIR/config.yml" <<EOF
+          versions:
+            "${V}":
+              folder: all
+          EOF
+
+          # The actual recipe — modelled after ours but using tools.files.get()
+          cp conanfile.py "$DIR/all/conanfile.py"
+          python - <<'PY'
+          import pathlib, re
+          p = pathlib.Path("cci/recipes/stellar/all/conanfile.py")
+          s = p.read_text()
+          # Replace exports_sources with source() method using tools.files.get()
+          s = re.sub(r'exports_sources[^\n]+\n(\s+"[^\n]+\n)+', '', s)
+          if "def source(self)" not in s:
+              s = s.replace(
+                  "def layout(self):",
+                  "def source(self):\n"
+                  "        from conan.tools.files import get\n"
+                  "        get(self, **self.conan_data[\"sources\"][self.version], strip_root=True)\n\n"
+                  "    def layout(self):",
+              )
+          p.write_text(s)
+          PY
+
+          # test_package
+          cp test_package/conanfile.py "$DIR/all/test_package/conanfile.py"
+          cp test_package/CMakeLists.txt "$DIR/all/test_package/CMakeLists.txt"
+          cp test_package/src/smoke.cpp "$DIR/all/test_package/src/smoke.cpp"
+
+      - name: Commit + open PR
+        env:
+          GH_TOKEN: ${{ secrets.CONAN_CCI_FORK_PAT }}
+          FORK:     ${{ secrets.CONAN_CCI_FORK_OWNER }}
+        run: |
+          if [[ -z "$GH_TOKEN" || -z "$FORK" ]]; then exit 0; fi
+          V="${{ steps.rel.outputs.version }}"
+          cd cci
+          git add recipes/stellar
+          git -c user.name=github-actions -c user.email=actions@github.com commit -m "stellar: add version ${V}"
+          git push -u origin "stellar/${V}"
+          gh pr create \
+            --repo conan-io/conan-center-index \
+            --base master \
+            --head "${FORK}:stellar/${V}" \
+            --title "stellar/${V}" \
+            --body  "Adds stellar ${V}. Header-only C++23 utilities.\n\nSHA256 for tarball is pinned in conandata.yml."

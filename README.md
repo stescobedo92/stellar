@@ -1,9 +1,8 @@
 # Stellar — Toolkit Extensions for C++23
 
-**Stellar** is a header-only C++23 library that mirrors the surface of
-[`BinaryCoffee.Extensions`](https://github.com/AsereHighDev/BinaryCoffee.Extensions)
-(C#) method-for-method under the `ste::` namespace, then adds a curated set of
-professional utilities on top.
+**Stellar** is a header-only C++23 library that provides a curated set of
+professional string, collection, async, and text-building utilities under the
+`ste::` namespace, designed for modern, high-performance applications.
 
 Every hot path is single-pass and pre-reserves its output buffer, so the common
 operations allocate **exactly once** (for the returned `std::string`) and often
@@ -22,8 +21,8 @@ ste::ToSlug("Hello, World! 100%");    // → "hello-world-100"
 
 - **Namespace `ste::`** — every public symbol lives here.
 - **Two calling styles** — free functions over `std::string_view` for peak
-  performance, or fluent `ste::str` (a thin `std::string` subclass) for the
-  familiar `.Method()` syntax from the C# original.
+  performance, or fluent `ste::str` (a thin `std::string` subclass) for
+  `.Method()` chaining.
 - **Header-only**, C++23, no third-party runtime deps.
 - **Zero regex** in hot paths — state machines for `NormalizeSpaces`, `ToSlug`,
   `StripTags`, `ReplaceAll`, etc.
@@ -33,46 +32,136 @@ ste::ToSlug("Hello, World! 100%");    // → "hello-world-100"
 - **Google Benchmark** comparing naive C++ (regex / multi-pass) vs. the
   optimized `ste::` version.
 
-## API parity with BinaryCoffee.Extensions
+## API
 
-| C# method                     | `ste::` equivalent                  |
-|-------------------------------|-------------------------------------|
-| `string.ToCamelCase()`        | `ste::ToCamelCase(sv)`              |
-| `string.ToPascalCase()`       | `ste::ToPascalCase(sv)`             |
-| `string.ToSnakeLowerCase()`   | `ste::ToSnakeLowerCase(sv)`         |
-| `string.ToSnakeUpperCase()`   | `ste::ToSnakeUpperCase(sv)`         |
-| `string.ToTitleCase(culture)` | `ste::ToTitleCase(sv)`              |
-| `string.MatchesPattern(p)`    | `ste::MatchesPattern(sv, p)`        |
-| `string.RemoveCharacters(..)` | `ste::RemoveCharacters(sv, ...)`    |
-| `string.Reverse()`            | `ste::Reverse(sv)`                  |
-| `string.ToSlug()`             | `ste::ToSlug(sv)`                   |
-| `string.CapitalizeWords()`    | `ste::CapitalizeWords(sv)`          |
-| `string.NormalizeSpaces()`    | `ste::NormalizeSpaces(sv)`          |
-| `string.StripTags()`          | `ste::StripTags(sv)`                |
-| `IEnumerable<T>.Join(...)`    | `ste::Join(range, ...)`             |
-| `Dictionary.AddNested(k, v)`  | `ste::AddNested(map, k, v)`         |
-| `StringBuilder.AppendFormatIf`| `ste::StringBuilder::AppendFormatIf`|
-| `StringBuilder.AppendLineIf`  | `ste::StringBuilder::AppendLineIf`  |
-| `StringBuilder.InsertJoin`    | `ste::StringBuilder::InsertJoin`    |
-| `ToCamelCaseAsync()`          | `ste::ToCamelCaseAsync(s)`          |
-| `ToPascalCaseAsync()`         | `ste::ToPascalCaseAsync(s)`         |
-| `ToTitleCaseAsync()`          | `ste::ToTitleCaseAsync(s)`          |
-| `IAsyncEnumerable.JoinAsync`  | `ste::JoinAsync(range, fn, sep)`    |
+| Functions                                   |
+|---------------------------------------------|
+| `ste::ToCamelCase(sv)`                      |
+| `ste::ToPascalCase(sv)`                     |
+| `ste::ToSnakeLowerCase(sv)`                 |
+| `ste::ToSnakeUpperCase(sv)`                 |
+| `ste::ToKebabCase(sv)`                      |
+| `ste::ToTitleCase(sv)`                      |
+| `ste::MatchesPattern(sv, pattern)`          |
+| `ste::RemoveCharacters(sv, chars...)`       |
+| `ste::Reverse(sv)`                          |
+| `ste::ToSlug(sv)`                           |
+| `ste::CapitalizeWords(sv)`                  |
+| `ste::NormalizeSpaces(sv)`                  |
+| `ste::StripTags(sv)`                        |
+| `ste::IsNullOrEmpty(sv)`                    |
+| `ste::IsNullOrWhiteSpace(sv)`               |
+| `ste::IsNumeric(sv)`                        |
+| `ste::IsAlpha(sv)`                          |
+| `ste::IsAlphanumeric(sv)`                   |
+| `ste::EqualsIgnoreCase(a, b)`               |
+| `ste::StartsWithIgnoreCase(s, prefix)`      |
+| `ste::EndsWithIgnoreCase(s, suffix)`        |
+| `ste::ContainsIgnoreCase(haystack, needle)` |
+| `ste::Truncate(sv, max_len, ellipsis)`      |
+| `ste::PadLeft(sv, width, pad)`              |
+| `ste::PadRight(sv, width, pad)`             |
+| `ste::Repeat(sv, n)`                        |
+| `ste::Left(sv, n)`                          |
+| `ste::Right(sv, n)`                         |
+| `ste::WordCount(sv)`                        |
+| `ste::LineCount(sv)`                        |
+| `ste::Split(sv, separator, keep_empty)`     |
+| `ste::SplitView(sv, separator)`             |
+| `ste::ReplaceAll(sv, from, to)`             |
+| `ste::LevenshteinDistance(a, b)`            |
+| `ste::ToBase64(sv)`                         |
+| `ste::FromBase64(sv)`                       |
+| `ste::Join(range, separator)`               |
+| `ste::Join(range, formatter, separator)`    |
+| `ste::AddNested(map, key, value)`           |
+| `ste::Chunk(range, size)`                   |
+| `ste::Partition(range, predicate)`          |
+| `ste::DistinctBy(range, keyFn)`             |
+| `ste::GroupBy(range, keyFn)`                |
+| `ste::MinBy(range, projection)`             |
+| `ste::MaxBy(range, projection)`             |
+| `ste::ToDictionary(range, keyFn, valueFn)`  |
+| `ste::ForEach(range, fn)`                   |
+| `ste::Any(range, predicate)`                |
+| `ste::All(range, predicate)`                |
+| `ste::None(range, predicate)`               |
+| `ste::StringBuilder::Append(s)`             |
+| `ste::StringBuilder::AppendLine(s)`         |
+| `ste::StringBuilder::AppendFormat(fmt, …)`  |
+| `ste::StringBuilder::AppendRepeated(v, n)`  |
+| `ste::StringBuilder::AppendFormatIf(cond, ifFn, elseFn)` |
+| `ste::StringBuilder::AppendLineIf(cond, getter)`         |
+| `ste::StringBuilder::AppendIf(cond, s)`     |
+| `ste::StringBuilder::Insert(index, s)`      |
+| `ste::StringBuilder::InsertJoin(index, range, formatter, sep)` |
+| `ste::StringBuilder::Replace(from, to)`     |
+| `ste::StringBuilder::Remove(start, count)`  |
+| `ste::StringBuilder::Clear()`               |
+| `ste::StringBuilder::MoveToString()`        |
+| `ste::ToCamelCaseAsync(s)`                  |
+| `ste::ToPascalCaseAsync(s)`                 |
+| `ste::ToTitleCaseAsync(s)`                  |
+| `ste::ToSlugAsync(s)`                       |
+| `ste::JoinAsync(range, formatter, sep)`     |
+| `ste::ToCamelCaseTask(s)`                   |
+| `ste::ToPascalCaseTask(s)`                  |
+| `ste::ToTitleCaseTask(s)`                   |
+| `ste::Task<T>` (coroutine return type, awaitable) |
 
-## Extras beyond the C# API
+## Install
 
-- **Case**: `ToKebabCase`
-- **Predicates**: `IsNullOrEmpty`, `IsNullOrWhiteSpace`, `IsNumeric`, `IsAlpha`,
-  `IsAlphanumeric`
-- **Case-insensitive ASCII compare**: `EqualsIgnoreCase`, `StartsWithIgnoreCase`,
-  `EndsWithIgnoreCase`, `ContainsIgnoreCase`
-- **Truncate / PadLeft / PadRight / Repeat / Left / Right**
-- **Counting**: `WordCount`, `LineCount`
-- **Split / SplitView (lazy)**, **ReplaceAll**, **LevenshteinDistance**
-- **Base64** encode/decode (RFC 4648)
-- **Collections**: `Chunk`, `Partition`, `DistinctBy`, `GroupBy`, `MinBy`,
-  `MaxBy`, `ToDictionary`, `Any`, `All`, `None`
-- **Async**: `ste::Task<T>` coroutine return type (awaitable)
+### vcpkg — self-hosted registry (always up-to-date)
+
+This repo **is** a vcpkg registry. Add it to your `vcpkg-configuration.json`:
+
+```jsonc
+{
+  "default-registry": {
+    "kind": "git",
+    "baseline": "<microsoft/vcpkg commit sha>",
+    "repository": "https://github.com/microsoft/vcpkg"
+  },
+  "registries": [
+    {
+      "kind": "git",
+      "repository": "https://github.com/stescobedo92/stellar",
+      "baseline": "<commit sha of main>",
+      "reference": "main",
+      "packages": [ "stellar" ]
+    }
+  ]
+}
+```
+
+Then `vcpkg install stellar` works out of the box.
+
+### vcpkg — microsoft/vcpkg (once upstream PR is merged)
+
+```bash
+vcpkg install stellar
+```
+
+### Conan 2.x
+
+```bash
+conan install --requires=stellar/0.1.0 --build=missing
+```
+
+The recipe is published to Conan Center (or your own Artifactory remote —
+see the `publish-conan` workflow).
+
+### CMake FetchContent (no package manager)
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(stellar
+    GIT_REPOSITORY https://github.com/stescobedo92/stellar.git
+    GIT_TAG v0.1.0
+)
+FetchContent_MakeAvailable(stellar)
+target_link_libraries(my_app PRIVATE stellar::stellar)
+```
 
 ## Building
 

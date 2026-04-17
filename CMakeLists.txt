@@ -79,8 +79,10 @@ if(STELLAR_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-# -------- Install --------
+# -------- Install / export --------
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(TARGETS stellar EXPORT stellarTargets)
 install(EXPORT stellarTargets
@@ -88,3 +90,31 @@ install(EXPORT stellarTargets
     NAMESPACE stellar::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/stellar
 )
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/stellarConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/stellarConfig.cmake"
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/stellar
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/stellarConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+    ARCH_INDEPENDENT
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/stellarConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/stellarConfigVersion.cmake"
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/stellar
+)
+
+# pkg-config (some consumers prefer it over CMake config)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/stellar.pc.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/stellar.pc"
+    @ONLY
+)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/stellar.pc"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
