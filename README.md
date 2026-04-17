@@ -1,4 +1,4 @@
-# Stellar — Toolkit Extensions for C++23
+# Stellar
 
 **Stellar** is a header-only C++23 library that provides a curated set of
 professional string, collection, async, and text-building utilities under the
