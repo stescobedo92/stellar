@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
-# Self-hosted vcpkg registry port for Stellar. The SHA512 556623b4cd6206efa548d268a2d3b2638e88ff12db9c4eb375482ee2a0eaf1bd50e429bb5639b7228b549eb1b32f0199f99d20cf56d291e8ef792b8093a0249dnd version are
-# maintained automatically by .github/workflows/publish-vcpkg.yml.
+# Self-hosted vcpkg registry port for Stellar. The version and SHA512 below
+# are updated automatically by .github/workflows/publish-vcpkg.yml.
 set(VCPKG_BUILD_TYPE release)
 
 vcpkg_from_github(

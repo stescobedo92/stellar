@@ -56,11 +56,12 @@ jobs:
           SHA="${{ steps.in.outputs.sha512 }}"
           # vcpkg.json (self-hosted registry)
           jq --arg v "$V" '.version = $v' registry/ports/stellar/vcpkg.json > tmp && mv tmp registry/ports/stellar/vcpkg.json
-          # portfile.cmake — replace SHA512 line
-          sed -i -E "s/(SHA512\s+)[0-9a-fA-F]+/\1${SHA}/" registry/ports/stellar/portfile.cmake
+          # portfile.cmake — only replace the SHA512 line that follows whitespace
+          # at the start of a line (avoids matching SHA512 inside comments).
+          sed -i -E "s/^(\s*SHA512\s+)[0-9a-fA-F]+/\1${SHA}/" registry/ports/stellar/portfile.cmake
           # Also patch the canonical port (used for microsoft/vcpkg PR)
           jq --arg v "$V" '.version = $v' packaging/vcpkg/vcpkg.json       > tmp && mv tmp packaging/vcpkg/vcpkg.json
-          sed -i -E "s/(SHA512\s+)[0-9a-fA-F]+/\1${SHA}/" packaging/vcpkg/portfile.cmake
+          sed -i -E "s/^(\s*SHA512\s+)[0-9a-fA-F]+/\1${SHA}/" packaging/vcpkg/portfile.cmake
 
       - name: Refresh versions/baseline.json
         run: |
