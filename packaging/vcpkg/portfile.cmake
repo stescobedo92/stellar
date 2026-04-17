@@ -6,7 +6,7 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO        stescobedo92/stellar
     REF         "v${VERSION}"
-    SHA512      feb7fddfb84e4da8cc1e68a879e197b836e04daf466c00c42d96e73d4bce76015bbecc6c7205f3f85c6e0af2b9a324f5e9ddd57410b5fdf8eca8edf833a37b19  # filled in by publish-vcpkg workflow before submission
+    SHA512      556623b4cd6206efa548d268a2d3b2638e88ff12db9c4eb375482ee2a0eaf1bd50e429bb5639b7228b549eb1b32f0199f99d20cf56d291e8ef792b8093a0249d  # filled in by publish-vcpkg workflow before submission
     HEAD_REF    master
 )
 
